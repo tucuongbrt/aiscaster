@@ -5,4 +5,4 @@ Small application that forwards live AIS information to Ripples
 ant jar
 
 ## Running
-java -jar AisCaster.jar host:port
+java -jar AisCaster.jar host:port:apiKey

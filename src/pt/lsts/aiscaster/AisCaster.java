@@ -7,7 +7,9 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 import com.google.common.eventbus.Subscribe;
 import com.google.gson.Gson;
@@ -23,17 +25,21 @@ public class AisCaster {
 
 	private AISTracker tracker;
 
+	private String authKey;
+
 	private final Logger logger = LoggerFactory.getLogger(AisCaster.class);
-	
+
 	LinkedHashMap<Long, Long> mmsiToTimestamps = new LinkedHashMap<>();
 
-	public AisCaster(String host, int port) throws UnknownHostException, IOException {
-		
+	public AisCaster(String host, int port, String authKey) throws UnknownHostException, IOException {
+
+		this.authKey = authKey;
+
 		Socket socket = new Socket();
-		
+
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override
-			public void run() {				
+			public void run() {
 				if (socket != null)
 					try {
 						socket.close();
@@ -42,9 +48,10 @@ public class AisCaster {
 					}
 			}
 		});
-		
-		socket.connect(new InetSocketAddress(host, port));		
+
+		socket.connect(new InetSocketAddress(host, port));
 		System.out.println("Connected to " + host + ":" + port);
+		System.out.println("API key: " + authKey);
 		tracker = new AISTracker();
 		tracker.registerSubscriber(this);
 		tracker.update(socket.getInputStream());
@@ -63,18 +70,22 @@ public class AisCaster {
 				track.getLatitude().doubleValue(), track.getLongitude().doubleValue(),
 				track.getCourseOverGround().doubleValue(), track.getSpeedOverGround().doubleValue(),
 				track.getTrueHeading().doubleValue(), track.getShipName(), track.getShipType().getCode());
-				
-		if (coordsValid(ship.latitude,ship.longitude)) {
+
+		List<AisShip> ships = new ArrayList<>();
+		ships.add(ship);
+
+		if (coordsValid(ship.latitude, ship.longitude)) {
 			try {
 				String RIPPLES_URL = "https://ripples.lsts.pt/ais";
 				URL url = new URL(RIPPLES_URL);
 				HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+				connection.setRequestProperty("Authorization", authKey);
 				connection.setDoOutput(true);
 				connection.setRequestMethod("POST");
 				connection.setRequestProperty("Content-Type", "application/json");
 
 				Gson gson = new Gson();
-				String jsonShip = gson.toJson(ship);
+				String jsonShip = gson.toJson(ships);
 				DataOutputStream out = new DataOutputStream(connection.getOutputStream());
 				out.writeBytes(jsonShip);
 				out.flush();
@@ -86,7 +97,7 @@ public class AisCaster {
 				} else {
 					logger.info("Received response code " + responseCode + " from " + RIPPLES_URL);
 				}
-			} catch(Exception e) {
+			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		} else {
@@ -97,16 +108,17 @@ public class AisCaster {
 	private boolean coordsValid(double latitude, double longitude) {
 		return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
 	}
-	
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
-			System.err.println("Usage: java -jar AisCaster.jar <HOST>:<PORT>");
+			System.err.println("Usage: java -jar AisCaster.jar <HOST>:<PORT>:<AUTH_KEY>");
 			System.exit(1);
 		}
-		
+
 		String host = args[0].split(":")[0];
 		int port = Integer.parseInt(args[0].split(":")[1]);
-		
-		new AisCaster(host, port);		
+		String authKey = args[0].split(":")[2];
+
+		new AisCaster(host, port, authKey);
 	}
 }
